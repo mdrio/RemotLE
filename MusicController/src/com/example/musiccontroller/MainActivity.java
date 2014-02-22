@@ -13,6 +13,7 @@ import android.view.Menu;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
+import android.widget.Toast;
 import android.util.Log;
 
 public class MainActivity extends Activity {
@@ -42,6 +43,7 @@ public class MainActivity extends Activity {
                public void run() {
             	   Log.i(TAG,"Found device " + device.getName());	
             	   if (device.getName().contains("SensorTag") ){
+            		   Toast.makeText(MainActivity.this, "SensorTag found! ", Toast.LENGTH_SHORT).show();
             		   Log.i(TAG,"Starting service...");
             		   	mBluetoothAdapter.stopLeScan(mLeScanCallback);
             		   	Intent intent = new Intent(MainActivity.this, BluetoothLeService.class);
@@ -108,6 +110,7 @@ public class MainActivity extends Activity {
     }
     
     private void scanLeDevice(final boolean enable) {
+    	Toast.makeText(MainActivity.this, "Start scanning for BLE... ", Toast.LENGTH_SHORT).show();
     	Log.i(TAG, "starting scanLeDevice");
     	mScanning = true;
         mBluetoothAdapter.startLeScan(mLeScanCallback);

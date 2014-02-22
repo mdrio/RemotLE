@@ -51,7 +51,7 @@ public class BluetoothLeService extends Service {
     private static final UUID SIMPLE_KEYS_SERVICE_UUID = UUID.fromString("0000ffe0-0000-1000-8000-00805f9b34fb");
     private static final UUID SIMPLE_KEYS_DATA_UUID = UUID.fromString("0000ffe1-0000-1000-8000-00805f9b34fb");
     private BluetoothGattCharacteristic keyCharacteristic;
-    
+    private static SimpleKeysStatus previousStatus;
 
     private BluetoothDevice sensorTag;
     
@@ -101,27 +101,22 @@ public class BluetoothLeService extends Service {
 	        	    
 	            SimpleKeysStatus newValue = SimpleKeysStatus.values()[encodedInteger % 4];
 	            Log.i(TAG, "newValue " +  newValue.toString());
-	            if (newValue == SimpleKeysStatus.OFF_ON){
-	            	AudioManager mAudioManager = (AudioManager) getSystemService(BluetoothLeService.this.AUDIO_SERVICE);
-	            	
-    				if(mAudioManager.isMusicActive()) {
-    				    Intent i = new Intent(SERVICECMD);
-    				    i.putExtra(CMDNAME , CMDNEXT );
-    				    BluetoothLeService.this.sendBroadcast(i);
-    				}
-	        	}
-	            else if (newValue == SimpleKeysStatus.ON_OFF){
-	            	AudioManager mAudioManager = (AudioManager) getSystemService(BluetoothLeService.this.AUDIO_SERVICE);
-	            	
-    				if(mAudioManager.isMusicActive()) {
-    				    Intent i = new Intent(SERVICECMD);
-    				    i.putExtra(CMDNAME , CMDPREVIOUS);
-    				    BluetoothLeService.this.sendBroadcast(i);
-    				}
-	        	}
+	            AudioManager mAudioManager = (AudioManager) getSystemService(BluetoothLeService.this.AUDIO_SERVICE);
+	            Intent i = new Intent(SERVICECMD);
+				if(mAudioManager.isMusicActive()) {
+				    if (newValue == SimpleKeysStatus.OFF_ON){
+				    	i.putExtra(CMDNAME , CMDNEXT );	
+		        	}
+		            else if (newValue == SimpleKeysStatus.ON_OFF){
+		       		    i.putExtra(CMDNAME , CMDPREVIOUS);
+	    			}
+				BluetoothLeService.this.sendBroadcast(i);
+				previousStatus = newValue;
+        		}
+				
         	}
-        }
-        
+		}
+	        
         @Override
         // New services discovered
         public void onServicesDiscovered(BluetoothGatt gatt, int status) {
