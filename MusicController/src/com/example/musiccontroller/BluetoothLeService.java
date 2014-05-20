@@ -1,22 +1,26 @@
 package com.example.musiccontroller;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 import android.app.Service;
 import android.bluetooth.*;
+import android.content.Context;
 import android.content.Intent;
 import android.media.AudioManager;
 import android.os.IBinder;
+import android.telephony.PhoneStateListener;
+import android.telephony.TelephonyManager;
 import android.util.Log;
-import android.widget.Toast;
+import android.view.KeyEvent;
 
 enum SimpleKeysStatus {
     // Warning: The order in which these are defined matters.
     OFF_OFF, OFF_ON, ON_OFF, ON_ON;
 }
 
-public class BluetoothLeService extends Service {
+public class BluetoothLeService extends Service{
 	private final static String TAG = BluetoothLeService.class.getSimpleName();
 
     private BluetoothManager mBluetoothManager;
@@ -51,15 +55,57 @@ public class BluetoothLeService extends Service {
     private static final UUID SIMPLE_KEYS_SERVICE_UUID = UUID.fromString("0000ffe0-0000-1000-8000-00805f9b34fb");
     private static final UUID SIMPLE_KEYS_DATA_UUID = UUID.fromString("0000ffe1-0000-1000-8000-00805f9b34fb");
     private BluetoothGattCharacteristic keyCharacteristic;
-    private static SimpleKeysStatus previousStatus;
-
     private BluetoothDevice sensorTag;
     
+    private PhoneStateListener phoneListener;
+    private static AudioManager mAudioManager;
+    private static Speaker speaker;
+    private boolean isRinging = false;
+    private String incomingNumber;
+        
     @Override
     public void onStart(Intent intent, int startId) {
     	sensorTag = intent.getExtras().getParcelable("SensorTag");
     	Log.i(TAG, "Blconnected "+ sensorTag.getName());
     	mBluetoothGatt = sensorTag.connectGatt(this, false, mGattCallback);
+    	
+    	phoneListener = new PhoneStateListener(){
+    		private static final String TAG = "PHONELISTENER";
+    		public void onCallStateChanged(int state, String incomingNumber) {
+			   super.onCallStateChanged(state, incomingNumber);
+			   
+			   switch (state) {
+		        case TelephonyManager.CALL_STATE_IDLE:
+		            Log.d("DEBUG", "IDLE");
+		            BluetoothLeService.this.isRinging = false;
+					BluetoothLeService.this.incomingNumber = null;
+					mAudioManager.setSpeakerphoneOn(false);
+        			        			
+		            break;
+		        case TelephonyManager.CALL_STATE_OFFHOOK:
+		            Log.d("DEBUG", "OFFHOOK");
+		            BluetoothLeService.this.isRinging = false;
+					BluetoothLeService.this.incomingNumber = null;
+					mAudioManager.setMode(AudioManager.MODE_IN_CALL);
+        			mAudioManager.setSpeakerphoneOn(true);
+					
+		            break;
+		        case TelephonyManager.CALL_STATE_RINGING:
+		            Log.d("DEBUG", "RINGING");
+		            BluetoothLeService.this.isRinging = true;	
+					BluetoothLeService.this.incomingNumber = incomingNumber;
+					mAudioManager.setSpeakerphoneOn(true);
+		            break;
+		        }
+			    
+    		}
+	
+		};
+    	speaker = new Speaker(this);
+    	
+    	TelephonyManager TelephonyMgr = (TelephonyManager)getSystemService(Context.TELEPHONY_SERVICE);
+        TelephonyMgr.listen(phoneListener, PhoneStateListener.LISTEN_CALL_STATE);
+        mAudioManager = (AudioManager) getSystemService(BluetoothLeService.this.AUDIO_SERVICE);
     }
 
     // Various callback methods defined by the BLE API.
@@ -97,23 +143,31 @@ public class BluetoothLeService extends Service {
              */
         	Log.i(TAG, "onCharacteristicChanged");
         	if (characteristic == keyCharacteristic){
-	            Integer encodedInteger = characteristic.getIntValue(0x11, 0);
-	        	    
-	            SimpleKeysStatus newValue = SimpleKeysStatus.values()[encodedInteger % 4];
-	            Log.i(TAG, "newValue " +  newValue.toString());
-	            AudioManager mAudioManager = (AudioManager) getSystemService(BluetoothLeService.this.AUDIO_SERVICE);
-	            Intent i = new Intent(SERVICECMD);
-				if(mAudioManager.isMusicActive()) {
-				    if (newValue == SimpleKeysStatus.OFF_ON){
-				    	i.putExtra(CMDNAME , CMDNEXT );	
-		        	}
-		            else if (newValue == SimpleKeysStatus.ON_OFF){
-		       		    i.putExtra(CMDNAME , CMDPREVIOUS);
-	    			}
-				BluetoothLeService.this.sendBroadcast(i);
-				previousStatus = newValue;
+        		
+        		if (BluetoothLeService.this.isRinging){
+        			Intent i = new Intent(Intent.ACTION_MEDIA_BUTTON);
+        			i.putExtra(Intent.EXTRA_KEY_EVENT, new KeyEvent(KeyEvent.ACTION_UP,
+        			            KeyEvent.KEYCODE_HEADSETHOOK));
+        			BluetoothLeService.this.sendOrderedBroadcast(i, null);
+        			
         		}
-				
+        		else{
+        			Integer encodedInteger = characteristic.getIntValue(0x11, 0);
+    	            SimpleKeysStatus newValue = SimpleKeysStatus.values()[encodedInteger % 4];
+    	            Log.i(TAG, "newValue " +  newValue.toString());
+    	            Intent i = new Intent(SERVICECMD);
+    				if(mAudioManager.isMusicActive()) {
+    				    if (newValue == SimpleKeysStatus.OFF_ON){
+    				    	i.putExtra(CMDNAME , CMDNEXT );	
+    		        	}
+    		            else if (newValue == SimpleKeysStatus.ON_OFF){
+    		       		    i.putExtra(CMDNAME , CMDPREVIOUS);
+    	    			}
+    				BluetoothLeService.this.sendBroadcast(i);
+    				
+            		}
+        		}
+	            
         	}
 		}
 	        
@@ -169,5 +223,6 @@ public class BluetoothLeService extends Service {
 		// TODO Auto-generated method stub
 		return null;
 	}
+	
 }
 	

@@ -13,11 +13,13 @@ import android.view.Menu;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
+import android.widget.TextView;
 import android.widget.Toast;
+import android.telephony.PhoneStateListener;
+import android.telephony.TelephonyManager;
 import android.util.Log;
 
 public class MainActivity extends Activity {
-	Button nextSong;
 	static private final String TAG = "MusicController";
 	static final String CMDTOGGLEPAUSE = "togglepause";
 	static final String CMDPAUSE = "pause";
@@ -32,6 +34,9 @@ public class MainActivity extends Activity {
 	private boolean mScanning;
     private Handler mHandler;
     private Button scanBLE;
+    private TextView status;
+    private Button startGMusic;
+    private MyPhoneStateListener phoneListener;
     
     private BluetoothAdapter.LeScanCallback mLeScanCallback =
             new BluetoothAdapter.LeScanCallback() {
@@ -43,7 +48,8 @@ public class MainActivity extends Activity {
                public void run() {
             	   Log.i(TAG,"Found device " + device.getName());	
             	   if (device.getName().contains("SensorTag") ){
-            		   Toast.makeText(MainActivity.this, "SensorTag found! ", Toast.LENGTH_SHORT).show();
+//            		   Toast.makeText(MainActivity.this, "SensorTag found! ", Toast.LENGTH_SHORT).show();
+            		   status.setText("SensorTag found!");
             		   Log.i(TAG,"Starting service...");
             		   	mBluetoothAdapter.stopLeScan(mLeScanCallback);
             		   	Intent intent = new Intent(MainActivity.this, BluetoothLeService.class);
@@ -62,6 +68,12 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
         
         scanBLE = (Button) findViewById(R.id.scan);
+        status = (TextView) findViewById(R.id.sensortag_status);
+        startGMusic = (Button) findViewById(R.id.start_google_music);
+        
+        TelephonyManager TelephonyMgr = (TelephonyManager)getSystemService(Context.TELEPHONY_SERVICE);
+        TelephonyMgr.listen(new MyPhoneStateListener(), PhoneStateListener.LISTEN_CALL_STATE);
+        
         scanBLE.setOnClickListener(new OnClickListener() {
         	@Override
     		public void onClick(View v) {
@@ -69,29 +81,25 @@ public class MainActivity extends Activity {
     		}
         });
         
-        nextSong = (Button) findViewById(R.id.nextsong);
-        nextSong.setOnClickListener(new OnClickListener() {
-			@Override
-			public void onClick(View v) {
-//				Intent i = new Intent(Intent.ACTION_MEDIA_BUTTON);
-//				i.putExtra(Intent.EXTRA_KEY_EVENT,new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_NEXT));
-//				//i.putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent.KEYCODE_MEDIA_NEXT);
-//				sendOrderedBroadcast(i, null);
-//				Log.i(TAG, "Send intent in broadcast");
-			
-//			AudioManager mAudioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-//
-//			if(mAudioManager.isMusicActive()) {
-//			    Intent i = new Intent(SERVICECMD);
-//			    i.putExtra(CMDNAME , CMDNEXT );
-//			    MainActivity.this.sendBroadcast(i);
-//			}
-			
-			
-			}
-		});
         
-        final BluetoothManager bluetoothManager =
+        startGMusic.setOnClickListener(new OnClickListener() {
+        	@Override
+    		public void onClick(View v) {
+        		Intent intent = new Intent("android.intent.action.MUSIC_PLAYER");//Min SDK 8
+        	    startActivity(intent);
+    			
+    		}
+        });
+        
+        
+        scanBLE.setOnClickListener(new OnClickListener() {
+        	@Override
+    		public void onClick(View v) {
+    			scanLeDevice(true);
+    		}
+        });
+       
+       final BluetoothManager bluetoothManager =
                 (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
         mBluetoothAdapter = bluetoothManager.getAdapter();
         if (mBluetoothAdapter == null || !mBluetoothAdapter.isEnabled()) {
@@ -110,25 +118,29 @@ public class MainActivity extends Activity {
     }
     
     private void scanLeDevice(final boolean enable) {
-    	Toast.makeText(MainActivity.this, "Start scanning for BLE... ", Toast.LENGTH_SHORT).show();
+//    	Toast.makeText(MainActivity.this, "Start scanning for BLE... ", Toast.LENGTH_SHORT).show();
+    	status.setText("Searching...");
     	Log.i(TAG, "starting scanLeDevice");
     	mScanning = true;
-        mBluetoothAdapter.startLeScan(mLeScanCallback);
-    	if (enable) {
-            // Stops scanning after a pre-defined scan period.
-    		mHandler = new Handler();
-            mHandler.postDelayed(new Runnable() {
-                @Override
-                public void run() {
-                    mScanning = false;
-                    mBluetoothAdapter.stopLeScan(mLeScanCallback);
-                }
-            }, SCAN_PERIOD);
+    	if (mBluetoothAdapter != null){
+    		mBluetoothAdapter.startLeScan(mLeScanCallback);
+        	if (enable) {
+                // Stops scanning after a pre-defined scan period.
+        		mHandler = new Handler();
+                mHandler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        mScanning = false;
+                        mBluetoothAdapter.stopLeScan(mLeScanCallback);
+                    }
+                }, SCAN_PERIOD);
 
-        } else {
-            mScanning = false;
-            mBluetoothAdapter.stopLeScan(mLeScanCallback);
-        }
+            } else {
+                mScanning = false;
+                mBluetoothAdapter.stopLeScan(mLeScanCallback);
+            }
+    	}
+        
     
     }
 }
