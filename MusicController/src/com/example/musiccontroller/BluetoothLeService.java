@@ -6,10 +6,15 @@ import java.util.UUID;
 
 import android.app.Service;
 import android.bluetooth.*;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
+import android.database.Cursor;
 import android.media.AudioManager;
+import android.net.Uri;
 import android.os.IBinder;
+import android.provider.BaseColumns;
+import android.provider.ContactsContract;
 import android.telephony.PhoneStateListener;
 import android.telephony.TelephonyManager;
 import android.util.Log;
@@ -22,17 +27,14 @@ enum SimpleKeysStatus {
 
 public class BluetoothLeService extends Service{
 	private final static String TAG = BluetoothLeService.class.getSimpleName();
-
-    private BluetoothManager mBluetoothManager;
-    private BluetoothAdapter mBluetoothAdapter;
-    private String mBluetoothDeviceAddress;
-    private BluetoothGatt mBluetoothGatt;
-    private int mConnectionState = STATE_DISCONNECTED;
+	
+	private int mConnectionState = STATE_DISCONNECTED;
 
     private static final int STATE_DISCONNECTED = 0;
     private static final int STATE_CONNECTING = 1;
     private static final int STATE_CONNECTED = 2;
 
+    private BluetoothGatt mBluetoothGatt;
     public final static String ACTION_GATT_CONNECTED =
             "com.example.bluetooth.le.ACTION_GATT_CONNECTED";
     public final static String ACTION_GATT_DISCONNECTED =
@@ -61,6 +63,7 @@ public class BluetoothLeService extends Service{
     private static AudioManager mAudioManager;
     private static Speaker speaker;
     private boolean isRinging = false;
+    private boolean isOffHook = false;
     private String incomingNumber;
         
     @Override
@@ -68,6 +71,7 @@ public class BluetoothLeService extends Service{
     	sensorTag = intent.getExtras().getParcelable("SensorTag");
     	Log.i(TAG, "Blconnected "+ sensorTag.getName());
     	mBluetoothGatt = sensorTag.connectGatt(this, false, mGattCallback);
+    	speaker = new Speaker(this);
     	
     	phoneListener = new PhoneStateListener(){
     		private static final String TAG = "PHONELISTENER";
@@ -78,30 +82,42 @@ public class BluetoothLeService extends Service{
 		        case TelephonyManager.CALL_STATE_IDLE:
 		            Log.d("DEBUG", "IDLE");
 		            BluetoothLeService.this.isRinging = false;
+		            BluetoothLeService.this.isOffHook = false;
 					BluetoothLeService.this.incomingNumber = null;
+					mAudioManager.setMode(AudioManager.MODE_NORMAL);
 					mAudioManager.setSpeakerphoneOn(false);
+					
         			        			
 		            break;
 		        case TelephonyManager.CALL_STATE_OFFHOOK:
 		            Log.d("DEBUG", "OFFHOOK");
 		            BluetoothLeService.this.isRinging = false;
+		            BluetoothLeService.this.isOffHook = true;
 					BluetoothLeService.this.incomingNumber = null;
-					mAudioManager.setMode(AudioManager.MODE_IN_CALL);
-        			mAudioManager.setSpeakerphoneOn(true);
+					if (mConnectionState == STATE_CONNECTED){
+						mAudioManager.setMode(AudioManager.MODE_IN_CALL);
+	        			mAudioManager.setSpeakerphoneOn(true);
+						
+					}
 					
 		            break;
 		        case TelephonyManager.CALL_STATE_RINGING:
 		            Log.d("DEBUG", "RINGING");
 		            BluetoothLeService.this.isRinging = true;	
-					BluetoothLeService.this.incomingNumber = incomingNumber;
+		            BluetoothLeService.this.isOffHook = false;
+		            BluetoothLeService.this.incomingNumber = incomingNumber;
 					mAudioManager.setSpeakerphoneOn(true);
+					String contactDisplayName = getContactDisplayNameByNumber(incomingNumber);
+					Log.i(TAG, "contact" +  contactDisplayName);
+					speaker.speakOut(contactDisplayName);
+					
 		            break;
 		        }
 			    
     		}
 	
 		};
-    	speaker = new Speaker(this);
+    	
     	
     	TelephonyManager TelephonyMgr = (TelephonyManager)getSystemService(Context.TELEPHONY_SERVICE);
         TelephonyMgr.listen(phoneListener, PhoneStateListener.LISTEN_CALL_STATE);
@@ -117,8 +133,8 @@ public class BluetoothLeService extends Service{
             String intentAction;
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 intentAction = ACTION_GATT_CONNECTED;
-                mConnectionState = STATE_CONNECTED;
                 broadcastUpdate(intentAction);
+                mConnectionState = STATE_CONNECTED;
                 Log.i(TAG, "Connected to GATT server.");
                 Log.i(TAG, "Attempting to start service discovery:" +
                         mBluetoothGatt.discoverServices());
@@ -144,7 +160,8 @@ public class BluetoothLeService extends Service{
         	Log.i(TAG, "onCharacteristicChanged");
         	if (characteristic == keyCharacteristic){
         		
-        		if (BluetoothLeService.this.isRinging){
+        		if (BluetoothLeService.this.isRinging || BluetoothLeService.this.isOffHook){
+        			
         			Intent i = new Intent(Intent.ACTION_MEDIA_BUTTON);
         			i.putExtra(Intent.EXTRA_KEY_EVENT, new KeyEvent(KeyEvent.ACTION_UP,
         			            KeyEvent.KEYCODE_HEADSETHOOK));
@@ -155,6 +172,7 @@ public class BluetoothLeService extends Service{
         			Integer encodedInteger = characteristic.getIntValue(0x11, 0);
     	            SimpleKeysStatus newValue = SimpleKeysStatus.values()[encodedInteger % 4];
     	            Log.i(TAG, "newValue " +  newValue.toString());
+    	            
     	            Intent i = new Intent(SERVICECMD);
     				if(mAudioManager.isMusicActive()) {
     				    if (newValue == SimpleKeysStatus.OFF_ON){
@@ -222,6 +240,29 @@ public class BluetoothLeService extends Service{
 	public IBinder onBind(Intent arg0) {
 		// TODO Auto-generated method stub
 		return null;
+	}
+	
+	public String getContactDisplayNameByNumber(String number) {
+	    Uri uri = Uri.withAppendedPath(ContactsContract.PhoneLookup.CONTENT_FILTER_URI, Uri.encode(number));
+	    String name = "";
+
+	    ContentResolver contentResolver = getContentResolver();
+	    Cursor contactLookup = contentResolver.query(uri, new String[] {BaseColumns._ID,
+	            ContactsContract.PhoneLookup.DISPLAY_NAME }, null, null, null);
+
+	    try {
+	        if (contactLookup != null && contactLookup.getCount() > 0) {
+	            contactLookup.moveToNext();
+	            name = contactLookup.getString(contactLookup.getColumnIndex(ContactsContract.Data.DISPLAY_NAME));
+	            //String contactId = contactLookup.getString(contactLookup.getColumnIndex(BaseColumns._ID));
+	        }
+	    } finally {
+	        if (contactLookup != null) {
+	            contactLookup.close();
+	        }
+	    }
+
+	    return name;
 	}
 	
 }

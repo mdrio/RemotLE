@@ -31,7 +31,7 @@ public class Speaker implements TextToSpeech.OnInitListener{
 		
 	}
 	
-	private void speakOut(String text) {
+	void speakOut(String text) {
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, null);
     }
 
